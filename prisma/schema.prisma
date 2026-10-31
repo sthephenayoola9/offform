@@ -1,0 +1,441 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// -------------------------------------------------------------
+// IDENTITY & ACCESS
+// -------------------------------------------------------------
+
+model User {
+  id                 String    @id @default(cuid())
+  email              String    @unique
+  passwordHash       String
+  username           String    @unique
+  displayName        String
+  avatar             String?
+  role               String    @default("MEMBER") // VISITOR, MEMBER, SELLER, ADMIN
+  age                Int       @default(20)
+  bio                String?
+  location           String?
+  aestheticTags      String?   // comma-separated: Streetwear, Avant-Garde, Upcycled, Cyberpunk
+  isVerifiedDesigner Boolean   @default(false)
+  isApprovedSeller   Boolean   @default(false)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  // Relationships
+  posts                Post[]
+  comments             Comment[]
+  likes                PostLike[]
+  saves                Save[]
+  collections          Collection[]
+  products             Product[]
+  ordersAsBuyer        Order[]               @relation("BuyerOrders")
+  ordersAsSeller       Order[]               @relation("SellerOrders")
+  sellerApplications   SellerApplication[]
+  commissionRequests   CommissionRequest[]   @relation("BuyerCommissions")
+  commissionsOffered   CommissionRequest[]   @relation("DesignerCommissions")
+  briefsOwned          CollaborationBrief[]  @relation("OwnerBriefs")
+  proposalsSubmitted   CollaborationProposal[] @relation("DesignerProposals")
+  sentMessages         Message[]             @relation("SentMessages")
+  notifications        Notification[]
+  reportsFiled         ModerationReport[]    @relation("ReporterUser")
+  policyAcceptances    PolicyAcceptance[]
+  auditLogs            AuditLog[]            @relation("ActorAudit")
+  challengeEntries     ChallengeSubmission[]
+  eventsOrganized      Event[]
+}
+
+model SellerApplication {
+  id                     String    @id @default(cuid())
+  applicantId            String
+  applicant              User      @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  businessName           String
+  bio                    String
+  portfolioUrl           String
+  productionCapabilities String
+  idDocumentUrl          String    // Protected reference
+  addressDocumentUrl     String    // Protected reference
+  status                 String    @default("PENDING") // PENDING, APPROVED, REJECTED, INFO_REQUESTED
+  reviewNotes            String?
+  reviewedAt             DateTime?
+  reviewedBy             String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+}
+
+model PolicyVersion {
+  id            String    @id @default(cuid())
+  type          String    // TERMS, PRIVACY, COMMUNITY, SELLER, REFUND, IP, COLLAB, MODERATION, COOKIE
+  version       String    // e.g. "1.0.0"
+  title         String
+  summary       String
+  content       String
+  effectiveDate DateTime  @default(now())
+  createdAt     DateTime  @default(now())
+}
+
+model PolicyAcceptance {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  policyType String
+  version    String
+  acceptedAt DateTime @default(now())
+
+  @@unique([userId, policyType, version])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String
+  actor      User     @relation("ActorAudit", fields: [actorId], references: [id], onDelete: Cascade)
+  action     String   // e.g. SELLER_APPROVED, LISTING_PAUSED, REPORT_RESOLVED
+  targetType String   // USER, PRODUCT, POST, APPLICATION, REPORT
+  targetId   String
+  details    String?
+  createdAt  DateTime @default(now())
+}
+
+// -------------------------------------------------------------
+// SOCIAL & COMMUNITY
+// -------------------------------------------------------------
+
+model Post {
+  id              String      @id @default(cuid())
+  authorId        String
+  author          User        @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  caption         String
+  postType        String      @default("OUTFIT") // OUTFIT, CONCEPT, INSPIRATION, SHOWCASE, COLLAB_ANNOUNCEMENT
+  mediaUrls       String      // JSON array of image URLs
+  tags            String?     // Comma-separated hashtags
+  linkedProductId String?
+  linkedProduct   Product?    @relation(fields: [linkedProductId], references: [id], onDelete: SetNull)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  comments    Comment[]
+  likes       PostLike[]
+  submissions ChallengeSubmission[]
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  content   String
+  createdAt DateTime @default(now())
+}
+
+model PostLike {
+  id        String   @id @default(cuid())
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([postId, userId])
+}
+
+model Follow {
+  id          String   @id @default(cuid())
+  followerId  String
+  followingId String
+  createdAt   DateTime @default(now())
+
+  @@unique([followerId, followingId])
+}
+
+model Block {
+  id        String   @id @default(cuid())
+  blockerId String
+  blockedId String
+  createdAt DateTime @default(now())
+
+  @@unique([blockerId, blockedId])
+}
+
+model Save {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  targetType String   // POST, PRODUCT
+  targetId   String
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, targetType, targetId])
+}
+
+model Collection {
+  id          String           @id @default(cuid())
+  userId      String
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  isPublic    Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+  items       CollectionItem[]
+}
+
+model CollectionItem {
+  id           String     @id @default(cuid())
+  collectionId String
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  targetType   String     // POST, PRODUCT
+  targetId     String
+  createdAt    DateTime   @default(now())
+
+  @@unique([collectionId, targetType, targetId])
+}
+
+// -------------------------------------------------------------
+// MARKETPLACE & COMMERCE
+// -------------------------------------------------------------
+
+model Product {
+  id               String                @id @default(cuid())
+  sellerId         String
+  seller           User                  @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  title            String
+  description      String
+  category         String                // Outerwear, Tops, Bottoms, Footwear, Accessories, Objects
+  productType      String                @default("READY_MADE") // READY_MADE, MADE_TO_ORDER, CUSTOMISABLE, COMMISSION
+  price            Float
+  currency         String                @default("USD")
+  stock            Int                   @default(1)
+  images           String                // JSON array string of image URLs
+  materials        String?
+  measurements     String?
+  productionOrigin String?
+  leadTimeDays     Int                   @default(3)
+  status           String                @default("ACTIVE") // ACTIVE, PAUSED, UNDER_REVIEW, SOLD_OUT
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+
+  customizationOptions CustomizationOption[]
+  orderItems           OrderItem[]
+  linkedPosts          Post[]
+}
+
+model CustomizationOption {
+  id         String   @id @default(cuid())
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  name       String   // e.g. "Colorway", "Patch Placement", "Fabric"
+  type       String   // SELECT, TEXT, UPLOAD, SWATCH
+  values     String   // JSON array string of options e.g. [{"label": "Matte Black", "extra": 0}, {"label": "Crimson Wash", "extra": 15}]
+  extraPrice Float    @default(0)
+}
+
+model Order {
+  id                      String              @id @default(cuid())
+  buyerId                 String
+  buyer                   User                @relation("BuyerOrders", fields: [buyerId], references: [id], onDelete: Cascade)
+  sellerId                String
+  seller                  User                @relation("SellerOrders", fields: [sellerId], references: [id], onDelete: Cascade)
+  totalAmount             Float
+  currency                String              @default("USD")
+  status                  String              @default("PENDING_PAYMENT") // PENDING_PAYMENT, PAYMENT_CONFIRMED, AWAITING_APPROVAL, IN_PRODUCTION, READY_TO_SHIP, SHIPPED, DELIVERED, CANCELLED, REFUNDED
+  shippingAddress         String              // JSON string of address
+  customisationSelections String?             // JSON string of user customization choices
+  trackingNumber          String?
+  notes                   String?
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+
+  items   OrderItem[]
+  history OrderStatusHistory[]
+  reviews Review[]
+}
+
+model OrderItem {
+  id                   String  @id @default(cuid())
+  orderId              String
+  order                Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId            String
+  product              Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity             Int     @default(1)
+  unitPrice            Float
+  customisationSummary String?
+}
+
+model OrderStatusHistory {
+  id         String   @id @default(cuid())
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  fromStatus String
+  toStatus   String
+  note       String?
+  createdAt  DateTime @default(now())
+}
+
+model Review {
+  id                 String   @id @default(cuid())
+  orderId            String
+  order              Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  authorId           String
+  targetId           String   // Seller or Product id
+  rating             Int      @default(5)
+  comment            String
+  isVerifiedPurchase Boolean  @default(true)
+  createdAt          DateTime @default(now())
+}
+
+// -------------------------------------------------------------
+// COMMISSIONS & COLLABORATIONS
+// -------------------------------------------------------------
+
+model CommissionRequest {
+  id            String    @id @default(cuid())
+  buyerId       String
+  buyer         User      @relation("BuyerCommissions", fields: [buyerId], references: [id], onDelete: Cascade)
+  designerId    String
+  designer      User      @relation("DesignerCommissions", fields: [designerId], references: [id], onDelete: Cascade)
+  title         String
+  specifications String
+  budget        Float?
+  deadline      DateTime?
+  status        String    @default("PENDING") // PENDING, ACCEPTED, DECLINED, IN_PROGRESS, COMPLETED
+  quoteAmount   Float?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model CollaborationBrief {
+  id             String                  @id @default(cuid())
+  ownerId        String
+  owner          User                    @relation("OwnerBriefs", fields: [ownerId], references: [id], onDelete: Cascade)
+  title          String
+  description    String
+  skillsRequired String                  // Comma-separated: Stylist, 3D Artist, Pattern Maker, Photographer
+  budgetRange    String?
+  deadline       DateTime?
+  visibility     String                  @default("PUBLIC") // PUBLIC, PRIVATE
+  status         String                  @default("OPEN") // OPEN, IN_REVIEW, ACCEPTED, CLOSED
+  createdAt      DateTime                @default(now())
+
+  proposals      CollaborationProposal[]
+}
+
+model CollaborationProposal {
+  id            String             @id @default(cuid())
+  briefId       String
+  brief         CollaborationBrief @relation(fields: [briefId], references: [id], onDelete: Cascade)
+  designerId    String
+  designer      User               @relation("DesignerProposals", fields: [designerId], references: [id], onDelete: Cascade)
+  message       String
+  quoteAmount   Float?
+  estimatedDays Int?
+  status        String             @default("PENDING") // PENDING, ACCEPTED, DECLINED
+  createdAt     DateTime           @default(now())
+}
+
+// -------------------------------------------------------------
+// MESSAGING & NOTIFICATIONS
+// -------------------------------------------------------------
+
+model Conversation {
+  id             String    @id @default(cuid())
+  participant1Id String
+  participant2Id String
+  status         String    @default("REQUEST_PENDING") // REQUEST_PENDING, ACCEPTED, DECLINED, BLOCKED
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  messages Message[]
+
+  @@unique([participant1Id, participant2Id])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String
+  sender         User         @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  content        String
+  readAt         DateTime?
+  createdAt      DateTime     @default(now())
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  body      String
+  category  String   @default("SOCIAL") // SOCIAL, COMMERCE, COLLAB, SECURITY
+  isRead    Boolean  @default(false)
+  linkUrl   String?
+  createdAt DateTime @default(now())
+}
+
+// -------------------------------------------------------------
+// MODERATION & GOVERNANCE
+// -------------------------------------------------------------
+
+model ModerationReport {
+  id               String    @id @default(cuid())
+  reporterId       String
+  reporter         User      @relation("ReporterUser", fields: [reporterId], references: [id], onDelete: Cascade)
+  targetType       String    // POST, PRODUCT, USER, MESSAGE
+  targetId         String
+  category         String    // HARASSMENT, STOLEN_DESIGN, SCAM, INAPPROPRIATE, MISLEADING, OTHER
+  reason           String
+  evidenceUrl      String?
+  status           String    @default("PENDING") // PENDING, REVIEWED, DISMISSED, ENFORCED
+  resolutionAction String?   // WARNING, PAUSED_LISTING, SUSPENDED_ACCOUNT, NO_ACTION
+  moderatorNotes   String?
+  resolvedAt       DateTime?
+  createdAt        DateTime  @default(now())
+}
+
+// -------------------------------------------------------------
+// EVENTS & CHALLENGES
+// -------------------------------------------------------------
+
+model Challenge {
+  id              String                @id @default(cuid())
+  title           String
+  prompt          String
+  bannerUrl       String?
+  deadline        DateTime
+  status          String                @default("ACTIVE") // ACTIVE, VOTING, COMPLETED
+  judgingCriteria String
+  createdAt       DateTime              @default(now())
+
+  submissions     ChallengeSubmission[]
+}
+
+model ChallengeSubmission {
+  id          String    @id @default(cuid())
+  challengeId String
+  challenge   Challenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  authorId    String
+  author      User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  postId      String
+  post        Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+  votesCount  Int       @default(0)
+  createdAt   DateTime  @default(now())
+}
+
+model Event {
+  id            String   @id @default(cuid())
+  title         String
+  description   String
+  category      String   // RUNWAY, POPUP, WORKSHOP, PANEL, EXHIBITION
+  date          DateTime
+  locationOrUrl String
+  isOnline      Boolean  @default(false)
+  organizerId   String
+  organizer     User     @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+  createdAt     DateTime @default(now())
+}
